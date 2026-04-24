@@ -1,39 +1,44 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from database import init_db
 from routers.auth import router as auth_router
 from routers.auth import top_router as legal_router
-from routers.upload import router as upload_router
 from routers.videos import router as videos_router
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise RuntimeError("SECRET_KEY environment variable must be set")
+SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:8080")
 
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+# Cloud Run: repo is cloned to /workspace-tiktok/; local dev: relative to this file
+_default_frontend = "/workspace-tiktok/frontend"
+FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", _default_frontend))
 
-# In Cloud Run (production) HTTPS is always on; in local dev HTTP is used.
-# Set HTTPS_ONLY=false to disable the secure cookie flag for local development.
-HTTPS_ONLY = os.getenv("HTTPS_ONLY", "true").lower() != "false"
 
-app = FastAPI(title="TikTok Manager API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
 
-# ── Middleware ────────────────────────────────────────────────────────────────
+
+app = FastAPI(title="TikTok Manager", version="2.0.0", lifespan=lifespan)
+
+# ── Middleware ──────────────────────────────────────────────────────────────
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
-    same_site="none",
-    https_only=True,
-    max_age=3600,
+    session_cookie="tiktok_session",
+    same_site="lax",
+    https_only=False,   # Cloud Run terminates TLS upstream
+    max_age=60 * 60 * 24 * 7,
 )
 
 app.add_middleware(
@@ -44,31 +49,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── API Routers ───────────────────────────────────────────────────────────────
+# ── API Routers ─────────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(legal_router)
-app.include_router(upload_router)
 app.include_router(videos_router)
 
-# ── Static file serving (Vue SPA) ────────────────────────────────────────────
-STATIC_DIR = Path(__file__).parent / "static"
 
-if STATIC_DIR.exists():
-    # Serve assets (JS, CSS, images, etc.)
-    app.mount("/assets", StaticFiles(directory=str(STATIC_DIR / "assets")), name="assets")
+@app.get("/health", tags=["health"])
+async def health() -> dict:
+    return {"status": "ok"}
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(request: Request, full_path: str) -> FileResponse:
-        """
-        Serve index.html for any route not matched by the API.
-        This enables Vue Router's history mode to work correctly.
-        """
-        # Try to serve an exact static file first (favicon, robots.txt, etc.)
-        candidate = STATIC_DIR / full_path
-        if candidate.exists() and candidate.is_file():
-            return FileResponse(str(candidate))
-        return FileResponse(str(STATIC_DIR / "index.html"))
 
-    @app.get("/", include_in_schema=False)
-    async def serve_index() -> FileResponse:
-        return FileResponse(str(STATIC_DIR / "index.html"))
+# ── Frontend static files (SPA) ─────────────────────────────────────────────
+# Mounted last so API routes always take priority.
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
