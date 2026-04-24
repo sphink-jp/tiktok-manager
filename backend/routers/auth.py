@@ -22,7 +22,7 @@ TIKTOK_REDIRECT_URI = os.getenv("TIKTOK_REDIRECT_URI", "http://localhost:8000/au
 TIKTOK_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
 # video.publish is required for Content Posting API v2 (video.upload is the legacy scope)
-TIKTOK_SCOPES = "user.info.basic,video.publish,video.query"
+TIKTOK_SCOPES = "user.info.basic,video.list,video.publish"
 TIKTOK_USERINFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
