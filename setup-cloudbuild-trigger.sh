@@ -12,18 +12,16 @@ set -euo pipefail
 PROJECT_ID="autogpt-406113"
 REGION="asia-northeast1"
 REPO_OWNER="sphink-jp"
-REPO_NAME="claude_agent"
+REPO_NAME="tiktok-manager"
 TRIGGER_NAME="tiktok-manager-push-deploy"
 BRANCH_PATTERN="^main$"
-INCLUDED_FILES="tiktok-manager/**"
-CONFIG_FILE="tiktok-manager/cloudbuild.yaml"
+CONFIG_FILE="cloudbuild.yaml"
 
 echo "Creating Cloud Build trigger: ${TRIGGER_NAME}"
 echo "  Project : ${PROJECT_ID}"
 echo "  Region  : ${REGION}"
 echo "  Repo    : ${REPO_OWNER}/${REPO_NAME}"
 echo "  Branch  : ${BRANCH_PATTERN}"
-echo "  Filter  : ${INCLUDED_FILES}"
 echo ""
 
 gcloud builds triggers create github \
@@ -34,7 +32,6 @@ gcloud builds triggers create github \
   --repo-name="${REPO_NAME}" \
   --branch-pattern="${BRANCH_PATTERN}" \
   --build-config="${CONFIG_FILE}" \
-  --included-files="${INCLUDED_FILES}" \
   --description="Push-and-deploy: tiktok-manager on push to main"
 
 echo ""

@@ -8,7 +8,6 @@ steps:
       - '-t'
       - 'gcr.io/$PROJECT_ID/tiktok-manager:latest'
       - '.'
-    dir: 'tiktok-manager'
 
   # Step 2: Push Docker image
   - name: 'gcr.io/cloud-builders/docker'
