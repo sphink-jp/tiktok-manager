@@ -13,13 +13,13 @@ client = TestClient(app, raise_server_exceptions=False)
 
 
 def test_tiktok_login_redirects_with_correct_scope():
-    """TikTok login must request video.publish scope (not video.upload)."""
+    """TikTok login must request only user.info.basic scope (video.publish requires Direct Post approval)."""
     response = client.get("/auth/tiktok", follow_redirects=False)
     assert response.status_code in (302, 307)
     location = response.headers["location"]
-    assert "video.publish" in location
-    assert "video.query" in location
-    # Legacy scope should NOT be used
+    assert "user.info.basic" in location
+    # video.publish requires Direct Post approval — must NOT be requested until approved
+    assert "video.publish" not in location
     assert "video.upload" not in location
 
 
