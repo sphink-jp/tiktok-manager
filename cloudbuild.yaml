@@ -33,6 +33,7 @@ steps:
       - 'asia-northeast1'
       - '--platform'
       - 'managed'
+      - '--no-allow-unauthenticated'
 
 images:
   - 'gcr.io/$PROJECT_ID/tiktok-manager:$COMMIT_SHA'
