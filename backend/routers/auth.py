@@ -20,6 +20,8 @@ TIKTOK_REDIRECT_URI = os.getenv("TIKTOK_REDIRECT_URI", "http://localhost:8000/au
 
 TIKTOK_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/"
 TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
+# video.publish is required for Content Posting API v2 (video.upload is the legacy scope)
+TIKTOK_SCOPES = "user.info.basic,video.publish,video.query"
 TIKTOK_USERINFO_URL = "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -104,7 +106,7 @@ async def tiktok_login(request: Request) -> RedirectResponse:
         "client_key": TIKTOK_CLIENT_KEY,
         "redirect_uri": TIKTOK_REDIRECT_URI,
         "response_type": "code",
-        "scope": "user.info.basic,video.upload",
+        "scope": TIKTOK_SCOPES,
         "state": state,
     }
     url = f"{TIKTOK_AUTH_URL}?{urlencode(params)}"
@@ -143,6 +145,8 @@ async def tiktok_callback(
 
         tokens = token_res.json()
         access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in", 86400)
 
         user_res = await client.get(
             TIKTOK_USERINFO_URL,
@@ -159,10 +163,53 @@ async def tiktok_callback(
         "avatar_url": user_data.get("avatar_url"),
         "auth_provider": "tiktok",
     }
-    # Store access token separately so upload/video endpoints can retrieve it
+    # Store TikTok tokens so upload/video endpoints can use them
     request.session["tiktok_access_token"] = access_token
+    if refresh_token:
+        request.session["tiktok_refresh_token"] = refresh_token
+    request.session["tiktok_token_expires_in"] = expires_in
 
     return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
+
+
+@router.post("/tiktok/refresh")
+async def tiktok_refresh_token(request: Request) -> dict:
+    """Refresh TikTok access token using the stored refresh token."""
+    refresh_token = request.session.get("tiktok_refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="リフレッシュトークンがありません。再度TikTokログインしてください。")
+
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            TIKTOK_TOKEN_URL,
+            data={
+                "client_key": TIKTOK_CLIENT_KEY,
+                "client_secret": TIKTOK_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    if token_res.status_code != 200:
+        body = token_res.json() if token_res.content else {}
+        detail = body.get("error_description", "トークンのリフレッシュに失敗しました")
+        raise HTTPException(status_code=502, detail=detail)
+
+    tokens = token_res.json()
+    new_access_token = tokens.get("access_token")
+    new_refresh_token = tokens.get("refresh_token")
+    expires_in = tokens.get("expires_in", 86400)
+
+    if not new_access_token:
+        raise HTTPException(status_code=502, detail="新しいアクセストークンを取得できませんでした")
+
+    request.session["tiktok_access_token"] = new_access_token
+    if new_refresh_token:
+        request.session["tiktok_refresh_token"] = new_refresh_token
+    request.session["tiktok_token_expires_in"] = expires_in
+
+    return {"message": "トークンを更新しました", "expires_in": expires_in}
 
 
 @router.get("/me")

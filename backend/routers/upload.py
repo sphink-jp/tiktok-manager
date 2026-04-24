@@ -2,6 +2,8 @@ import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
+from routers.deps import require_tiktok_token
+
 router = APIRouter(prefix="/api", tags=["upload"])
 
 # Maximum allowed upload size: 500 MB
@@ -21,26 +23,21 @@ POLL_ATTEMPTS = 6
 POLL_INTERVAL_SECONDS = 5
 
 
-def require_tiktok_token(request: Request) -> str:
-    """Dependency: return TikTok access token from session, or raise 401."""
-    token = request.session.get("tiktok_access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="TikTok認証が必要です")
-    return token
-
-
 async def _init_upload(
     client: httpx.AsyncClient,
     token: str,
     title: str,
+    description: str,
     privacy_level: str,
     file_size: int,
     content_type: str,
 ) -> tuple[str, str]:
     """Step 1: Call TikTok init endpoint, return (publish_id, upload_url)."""
+    # TikTok title field has a 150 char limit; description is sent as video_description
     payload = {
         "post_info": {
-            "title": title,
+            "title": title[:150],
+            "video_description": description[:2200] if description else "",
             "privacy_level": privacy_level,
             "disable_duet": False,
             "disable_comment": False,
@@ -157,12 +154,15 @@ async def upload_video(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="ファイルサイズが上限（500MB）を超えています")
 
+    if len(content) == 0:
+        raise HTTPException(status_code=422, detail="空のファイルはアップロードできません")
+
     privacy_level = PRIVACY_LEVEL_MAP[privacy]
     mime_type = file.content_type or "video/mp4"
 
     async with httpx.AsyncClient() as client:
         publish_id, upload_url = await _init_upload(
-            client, token, title, privacy_level, len(content), mime_type
+            client, token, title, description, privacy_level, len(content), mime_type
         )
         await _upload_video(client, upload_url, content, mime_type)
         await _poll_status(client, token, publish_id)

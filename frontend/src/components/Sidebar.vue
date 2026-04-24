@@ -46,17 +46,18 @@
     <div class="px-3 py-4 border-t border-gray-800">
       <div v-if="user" class="flex items-center gap-3 px-3 py-2">
         <img
-          v-if="user.picture"
-          :src="user.picture"
-          :alt="user.name"
+          v-if="user.picture || user.avatar_url"
+          :src="user.picture || user.avatar_url"
+          :alt="displayName"
           class="w-8 h-8 rounded-full flex-shrink-0 object-cover"
         />
         <div v-else class="w-8 h-8 rounded-full bg-pink-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
           {{ userInitial }}
         </div>
         <div v-if="!collapsed" class="flex-1 min-w-0">
-          <p class="text-sm text-white font-medium truncate">{{ user.name }}</p>
-          <p class="text-xs text-gray-500 truncate">{{ user.email }}</p>
+          <p class="text-sm text-white font-medium truncate">{{ displayName }}</p>
+          <p v-if="displayEmail" class="text-xs text-gray-500 truncate">{{ displayEmail }}</p>
+          <p v-else class="text-xs text-gray-500 truncate capitalize">{{ user.auth_provider }}</p>
         </div>
       </div>
       <button
@@ -81,9 +82,14 @@ const router = useRouter()
 const collapsed = ref(false)
 const user = ref(null)
 
+// display_name is used for TikTok accounts; name is used for Google accounts
+const displayName = computed(() => user.value?.display_name ?? user.value?.name ?? '')
+const displayEmail = computed(() => user.value?.email ?? '')
+
 const userInitial = computed(() => {
-  if (!user.value?.name) return '?'
-  return user.value.name.charAt(0).toUpperCase()
+  const name = displayName.value
+  if (!name) return '?'
+  return name.charAt(0).toUpperCase()
 })
 
 // Icon components

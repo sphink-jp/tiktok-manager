@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import UploadView from '../views/UploadView.vue'
+import SettingsView from '../views/SettingsView.vue'
 
 const routes = [
   {
@@ -24,6 +25,12 @@ const routes = [
     path: '/upload',
     name: 'Upload',
     component: UploadView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: SettingsView,
     meta: { requiresAuth: true }
   }
 ]

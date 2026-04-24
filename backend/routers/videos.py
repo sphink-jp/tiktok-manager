@@ -1,6 +1,8 @@
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from routers.deps import require_tiktok_token
+
 router = APIRouter(prefix="/api", tags=["videos"])
 
 TIKTOK_VIDEO_LIST_URL = "https://open.tiktokapis.com/v2/video/list/"
@@ -8,14 +10,6 @@ VIDEO_FIELDS = (
     "id,title,create_time,cover_image_url,share_url,"
     "view_count,like_count,comment_count,share_count,duration,height,width"
 )
-
-
-def require_tiktok_token(request: Request) -> str:
-    """Dependency: return TikTok access token from session, or raise 401."""
-    token = request.session.get("tiktok_access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="TikTok認証が必要です")
-    return token
 
 
 @router.get("/videos")
@@ -35,7 +29,10 @@ async def list_videos(
         )
 
     if response.status_code == 401:
-        raise HTTPException(status_code=401, detail="TikTokトークンが無効または期限切れです")
+        raise HTTPException(
+            status_code=401,
+            detail="TikTokトークンが無効または期限切れです。設定ページから再ログインしてください。",
+        )
 
     if response.status_code != 200:
         body = response.json() if response.content else {}

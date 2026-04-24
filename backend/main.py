@@ -18,7 +18,12 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable must be set")
+
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")
+
+# In Cloud Run (production) HTTPS is always on; in local dev HTTP is used.
+# Set HTTPS_ONLY=false to disable the secure cookie flag for local development.
+HTTPS_ONLY = os.getenv("HTTPS_ONLY", "true").lower() != "false"
 
 app = FastAPI(title="TikTok Manager API", version="1.0.0")
 
@@ -28,7 +33,7 @@ app.add_middleware(
     secret_key=SECRET_KEY,
     session_cookie="tiktok_session",
     same_site="lax",
-    https_only=True,    # Cloud Run always serves HTTPS
+    https_only=HTTPS_ONLY,
     max_age=60 * 60 * 24 * 7,  # 7 days
 )
 

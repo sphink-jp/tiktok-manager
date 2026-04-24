@@ -1,8 +1,9 @@
 <template>
   <Layout>
     <!-- Error banner -->
-    <div v-if="error" class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-      {{ error }}
+    <div v-if="error" class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-4">
+      <span>{{ error }}</span>
+      <router-link to="/settings" class="shrink-0 underline hover:text-red-900 font-medium">設定ページへ</router-link>
     </div>
 
     <!-- Stats Cards -->
@@ -187,7 +188,8 @@ async function fetchVideos() {
     const res = await fetch(`${baseUrl}/api/videos`, { credentials: 'include' })
 
     if (res.status === 401) {
-      error.value = 'TikTok認証が必要です。サイドバーのTikTokログインボタンから連携してください。'
+      error.value = 'TikTok認証が必要です。設定ページからTikTokアカウントと連携してください。'
+      loading.value = false
       return
     }
 
