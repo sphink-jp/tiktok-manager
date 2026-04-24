@@ -1,8 +1,17 @@
 import asyncio
+import logging
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
 
 from routers.deps import require_tiktok_token
+
+logger = logging.getLogger(__name__)
+
+# Thread pool for GCS I/O (synchronous google-cloud-storage library)
+_gcs_executor = ThreadPoolExecutor(max_workers=2)
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -167,10 +176,27 @@ async def upload_video(
         await _upload_video(client, upload_url, content, mime_type)
         await _poll_status(client, token, publish_id)
 
+    # Archive video to GCS after successful TikTok publish (best-effort, non-blocking)
+    gcs_uri: str | None = None
+    try:
+        import gcs as gcs_module
+        loop = asyncio.get_event_loop()
+        ext = (file.filename or "video.mp4").rsplit(".", 1)[-1] if file.filename else "mp4"
+        blob_name = f"tiktok-uploads/{publish_id}-{uuid.uuid4().hex[:8]}.{ext}"
+        gcs_uri = await loop.run_in_executor(
+            _gcs_executor,
+            lambda: gcs_module.upload_video(content, blob_name, mime_type),
+        )
+        logger.info("Video archived to GCS: %s", gcs_uri)
+    except Exception as exc:
+        # GCS failure must not break the upload response — just log it
+        logger.warning("GCS archive failed (non-fatal): %s", exc)
+
     return {
         "publish_id": publish_id,
         "title": title,
         "privacy": privacy,
         "status": "PUBLISH_COMPLETE",
         "message": "TikTokへの投稿が完了しました",
+        "gcs_uri": gcs_uri,
     }

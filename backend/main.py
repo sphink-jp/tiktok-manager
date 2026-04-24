@@ -11,6 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from database import init_db
 from routers.auth import router as auth_router
 from routers.auth import top_router as legal_router
+from routers.upload import router as upload_router
 from routers.videos import router as videos_router
 
 load_dotenv()
@@ -52,6 +53,7 @@ app.add_middleware(
 # ── API Routers ─────────────────────────────────────────────────────────────
 app.include_router(auth_router)
 app.include_router(legal_router)
+app.include_router(upload_router)
 app.include_router(videos_router)
 
 

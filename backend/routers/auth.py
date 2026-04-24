@@ -1,4 +1,6 @@
 import os
+import secrets
+import time
 from urllib.parse import urlencode
 
 import httpx
@@ -28,7 +30,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/google")
-async def google_login() -> RedirectResponse:
+async def google_login(request: Request) -> RedirectResponse:
+    state = secrets.token_urlsafe(32)
+    request.session["google_oauth_state"] = state
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": GOOGLE_REDIRECT_URI,
@@ -36,14 +40,24 @@ async def google_login() -> RedirectResponse:
         "scope": "openid email profile",
         "access_type": "offline",
         "prompt": "consent",
+        "state": state,
     }
     return RedirectResponse(f"{GOOGLE_AUTH_URL}?{urlencode(params)}")
 
 
 @router.get("/google/callback")
-async def google_callback(request: Request, code: str | None = None, error: str | None = None) -> RedirectResponse:
+async def google_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
     if error or not code:
         return RedirectResponse(f"{FRONTEND_ORIGIN}/?error=oauth_failed")
+
+    stored_state = request.session.pop("google_oauth_state", None)
+    if not stored_state or stored_state != state:
+        return RedirectResponse(f"{FRONTEND_ORIGIN}/?error=invalid_state")
 
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
@@ -61,6 +75,8 @@ async def google_callback(request: Request, code: str | None = None, error: str 
 
         tokens = token_res.json()
         access_token = tokens.get("access_token")
+        refresh_token = tokens.get("refresh_token")
+        expires_in = tokens.get("expires_in", 3600)
 
         user_res = await client.get(
             GOOGLE_USERINFO_URL,
@@ -71,6 +87,8 @@ async def google_callback(request: Request, code: str | None = None, error: str 
 
         user_info = user_res.json()
 
+    expires_at = time.time() + int(expires_in) if expires_in else None
+
     request.session["user"] = {
         "sub": user_info.get("sub"),
         "email": user_info.get("email"),
@@ -78,25 +96,76 @@ async def google_callback(request: Request, code: str | None = None, error: str 
         "picture": user_info.get("picture"),
         "auth_provider": "google",
     }
+    request.session["google_access_token"] = access_token
+    if refresh_token:
+        request.session["google_refresh_token"] = refresh_token
+    if expires_at:
+        request.session["google_token_expires_at"] = expires_at
 
     return RedirectResponse(FRONTEND_ORIGIN)
 
 
+@router.post("/google/refresh")
+async def google_refresh(request: Request) -> dict:
+    """Refresh Google access token using stored refresh token."""
+    refresh_token = request.session.get("google_refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No Google refresh token in session")
+
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+        )
+
+    if token_res.status_code != 200:
+        raise HTTPException(status_code=401, detail="Google token refresh failed")
+
+    tokens = token_res.json()
+    new_access_token = tokens.get("access_token")
+    new_expires_in = tokens.get("expires_in", 3600)
+    if not new_access_token:
+        raise HTTPException(status_code=401, detail="Google token refresh returned no token")
+
+    expires_at = time.time() + int(new_expires_in)
+    request.session["google_access_token"] = new_access_token
+    request.session["google_token_expires_at"] = expires_at
+
+    return {"access_token": new_access_token, "expires_at": expires_at}
+
+
 @router.get("/tiktok")
-async def tiktok_login() -> RedirectResponse:
+async def tiktok_login(request: Request) -> RedirectResponse:
+    state = secrets.token_urlsafe(32)
+    request.session["tiktok_oauth_state"] = state
     params = {
         "client_key": TIKTOK_CLIENT_KEY,
         "redirect_uri": TIKTOK_REDIRECT_URI,
         "response_type": "code",
         "scope": "user.info.basic",
+        "state": state,
     }
     return RedirectResponse(f"{TIKTOK_AUTH_URL}?{urlencode(params)}")
 
 
 @router.get("/tiktok/callback")
-async def tiktok_callback(request: Request, code: str | None = None, error: str | None = None) -> RedirectResponse:
+async def tiktok_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
     if error or not code:
         return RedirectResponse(f"{FRONTEND_ORIGIN}/?error=oauth_failed")
+
+    stored_state = request.session.pop("tiktok_oauth_state", None)
+    if not stored_state or stored_state != state:
+        return RedirectResponse(f"{FRONTEND_ORIGIN}/?error=invalid_state")
 
     async with httpx.AsyncClient() as client:
         token_res = await client.post(
@@ -146,13 +215,76 @@ async def tiktok_callback(request: Request, code: str | None = None, error: str 
         expires_in=expires_in,
     )
 
+    expires_at: float | None = None
+    if expires_in:
+        expires_at = time.time() + int(expires_in)
+
     request.session["user"] = {
         "open_id": open_id,
         "display_name": display_name,
         "avatar_url": avatar_url,
         "auth_provider": "tiktok",
     }
+    request.session["tiktok_access_token"] = access_token
+    if refresh_token:
+        request.session["tiktok_refresh_token"] = refresh_token
+    if expires_in:
+        request.session["tiktok_token_expires_in"] = expires_in
+    if expires_at is not None:
+        request.session["tiktok_token_expires_at"] = expires_at
+
     return RedirectResponse(FRONTEND_ORIGIN)
+
+
+@router.post("/tiktok/refresh")
+async def tiktok_refresh(request: Request) -> dict:
+    """Refresh TikTok access token using stored refresh token."""
+    refresh_token = request.session.get("tiktok_refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No TikTok refresh token in session")
+
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            TIKTOK_TOKEN_URL,
+            data={
+                "client_key": TIKTOK_CLIENT_KEY,
+                "client_secret": TIKTOK_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    if token_res.status_code != 200:
+        raise HTTPException(status_code=401, detail="TikTok token refresh failed")
+
+    tokens = token_res.json()
+    new_access_token = tokens.get("access_token")
+    new_refresh_token = tokens.get("refresh_token")
+    new_expires_in = tokens.get("expires_in", 86400)
+    if not new_access_token:
+        raise HTTPException(status_code=401, detail="TikTok token refresh returned no token")
+
+    expires_at = time.time() + int(new_expires_in)
+    request.session["tiktok_access_token"] = new_access_token
+    if new_refresh_token:
+        request.session["tiktok_refresh_token"] = new_refresh_token
+    request.session["tiktok_token_expires_in"] = new_expires_in
+    request.session["tiktok_token_expires_at"] = expires_at
+
+    # Update DB if we have open_id in session
+    open_id = (request.session.get("user") or {}).get("open_id")
+    if open_id:
+        upsert_user(
+            open_id=open_id,
+            display_name="",
+            avatar_url="",
+            access_token=new_access_token,
+            refresh_token=new_refresh_token,
+            expires_in=new_expires_in,
+        )
+
+    return {"access_token": new_access_token, "expires_at": expires_at}
 
 
 @router.get("/me")
@@ -160,7 +292,15 @@ async def get_me(request: Request) -> dict:
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
+
+    has_tiktok = bool(request.session.get("tiktok_access_token"))
+    tiktok_expires_at = request.session.get("tiktok_token_expires_at")
+
+    return {
+        **user,
+        "has_tiktok": has_tiktok,
+        "tiktok_token_expires_at": tiktok_expires_at,
+    }
 
 
 @router.post("/logout")
