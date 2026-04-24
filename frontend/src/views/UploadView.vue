@@ -37,7 +37,7 @@
               <div v-else class="flex items-center justify-center gap-3">
                 <svg class="w-8 h-8 text-pink-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    d: "M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
                 <div class="text-left">
                   <p class="text-sm font-medium text-gray-800">{{ selectedFile.name }}</p>
@@ -96,21 +96,19 @@
 
           <!-- Status message -->
           <div v-if="statusMessage" class="rounded-lg px-4 py-3 text-sm" :class="statusClass">
-            {{ statusMessage }}
+            <p class="font-medium">{{ statusMessage }}</p>
+            <p v-if="publishId" class="mt-1 text-xs opacity-75">
+              Publish ID: {{ publishId }}
+            </p>
           </div>
 
-          <!-- Progress bar -->
-          <div v-if="uploading" class="space-y-1">
-            <div class="flex justify-between text-xs text-gray-500">
-              <span>アップロード中...</span>
-              <span>{{ uploadProgress }}%</span>
-            </div>
-            <div class="w-full bg-gray-100 rounded-full h-2">
-              <div
-                class="bg-pink-500 h-2 rounded-full transition-all duration-300"
-                :style="{ width: uploadProgress + '%' }"
-              ></div>
-            </div>
+          <!-- Uploading indicator -->
+          <div v-if="uploading" class="flex items-center gap-3 text-sm text-gray-500">
+            <svg class="w-5 h-5 animate-spin text-pink-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>{{ uploadStepMessage }}</span>
           </div>
 
           <!-- Submit -->
@@ -128,7 +126,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {{ uploading ? 'アップロード中...' : 'TikTokへ投稿' }}
+              {{ uploading ? 'TikTokへ投稿中...' : 'TikTokへ投稿' }}
             </button>
             <button
               type="button"
@@ -152,14 +150,15 @@ const fileInput = ref(null)
 const selectedFile = ref(null)
 const isDragging = ref(false)
 const uploading = ref(false)
-const uploadProgress = ref(0)
+const uploadStepMessage = ref('')
 const statusMessage = ref('')
 const statusType = ref('') // 'success' | 'error'
+const publishId = ref('')
 
 const form = reactive({
   title: '',
   description: '',
-  privacy: 'public'
+  privacy: 'public',
 })
 
 const statusClass = computed(() => {
@@ -198,15 +197,17 @@ function resetForm() {
   form.privacy = 'public'
   statusMessage.value = ''
   statusType.value = ''
-  uploadProgress.value = 0
+  uploadStepMessage.value = ''
+  publishId.value = ''
 }
 
 async function handleUpload() {
   if (!selectedFile.value || !form.title) return
 
   uploading.value = true
-  uploadProgress.value = 0
   statusMessage.value = ''
+  publishId.value = ''
+  uploadStepMessage.value = 'TikTokへ動画を送信しています...'
 
   const formData = new FormData()
   formData.append('file', selectedFile.value)
@@ -216,36 +217,32 @@ async function handleUpload() {
 
   try {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-
-    // Simulate progress
-    const progressInterval = setInterval(() => {
-      if (uploadProgress.value < 85) uploadProgress.value += 5
-    }, 200)
-
     const res = await fetch(`${baseUrl}/api/upload`, {
       method: 'POST',
       body: formData,
-      credentials: 'include'
+      credentials: 'include',
     })
-
-    clearInterval(progressInterval)
-    uploadProgress.value = 100
 
     if (res.ok) {
       const data = await res.json()
+      publishId.value = data.publish_id ?? ''
       statusType.value = 'success'
-      statusMessage.value = `アップロード成功！動画ID: ${data.video_id ?? 'N/A'}`
-      resetForm()
+      statusMessage.value = 'TikTokへの投稿が完了しました。数分後にTikTokアプリで確認できます。'
+      clearFile()
+      form.title = ''
+      form.description = ''
+      form.privacy = 'public'
     } else {
       const err = await res.json().catch(() => ({ detail: 'アップロードに失敗しました' }))
       statusType.value = 'error'
       statusMessage.value = err.detail ?? 'アップロードに失敗しました'
     }
-  } catch (e) {
+  } catch {
     statusType.value = 'error'
     statusMessage.value = 'ネットワークエラーが発生しました'
   } finally {
     uploading.value = false
+    uploadStepMessage.value = ''
   }
 }
 </script>

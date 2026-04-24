@@ -159,6 +159,8 @@ async def tiktok_callback(
         "avatar_url": user_data.get("avatar_url"),
         "auth_provider": "tiktok",
     }
+    # Store access token separately so upload/video endpoints can retrieve it
+    request.session["tiktok_access_token"] = access_token
 
     return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
 

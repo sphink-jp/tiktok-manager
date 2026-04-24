@@ -11,6 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from routers.auth import router as auth_router
 from routers.auth import top_router as legal_router
 from routers.upload import router as upload_router
+from routers.videos import router as videos_router
 
 load_dotenv()
 
@@ -43,6 +44,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(legal_router)
 app.include_router(upload_router)
+app.include_router(videos_router)
 
 # ── Static file serving (Vue SPA) ────────────────────────────────────────────
 STATIC_DIR = Path(__file__).parent / "static"

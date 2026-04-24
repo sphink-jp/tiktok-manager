@@ -1,5 +1,10 @@
 <template>
   <Layout>
+    <!-- Error banner -->
+    <div v-if="error" class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+      {{ error }}
+    </div>
+
     <!-- Stats Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
       <div
@@ -12,10 +17,8 @@
         </div>
         <div>
           <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">{{ stat.label }}</p>
-          <p class="text-2xl font-bold text-gray-800 mt-0.5">{{ stat.value }}</p>
-          <p class="text-xs mt-0.5" :class="stat.changePositive ? 'text-green-500' : 'text-red-400'">
-            {{ stat.change }}
-          </p>
+          <p v-if="loading" class="text-2xl font-bold text-gray-300 mt-0.5 animate-pulse">---</p>
+          <p v-else class="text-2xl font-bold text-gray-800 mt-0.5">{{ stat.value }}</p>
         </div>
       </div>
     </div>
@@ -28,7 +31,19 @@
           新規アップロード →
         </router-link>
       </div>
-      <div class="overflow-x-auto">
+
+      <!-- Loading skeleton -->
+      <div v-if="loading" class="px-6 py-8 text-center text-gray-400 text-sm animate-pulse">
+        動画データを読み込み中...
+      </div>
+
+      <!-- Empty state -->
+      <div v-else-if="!loading && videos.length === 0" class="px-6 py-8 text-center text-gray-400 text-sm">
+        動画がありません。最初の動画をアップロードしましょう。
+      </div>
+
+      <!-- Table -->
+      <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-gray-50">
             <tr>
@@ -36,28 +51,25 @@
               <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">投稿日時</th>
               <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ビュー数</th>
               <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">いいね</th>
-              <th class="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">ステータス</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-50">
-            <tr v-for="video in recentVideos" :key="video.id" class="hover:bg-gray-50 transition-colors">
+            <tr v-for="video in videos" :key="video.id" class="hover:bg-gray-50 transition-colors">
               <td class="px-6 py-4">
                 <div class="flex items-center gap-3">
-                  <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-400 to-purple-500 flex-shrink-0"></div>
-                  <span class="font-medium text-gray-800 truncate max-w-[200px]">{{ video.title }}</span>
+                  <img
+                    v-if="video.cover_image_url"
+                    :src="video.cover_image_url"
+                    alt="cover"
+                    class="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                  />
+                  <div v-else class="w-10 h-10 rounded-lg bg-gradient-to-br from-pink-400 to-purple-500 flex-shrink-0"></div>
+                  <span class="font-medium text-gray-800 truncate max-w-[200px]">{{ video.title || '(タイトルなし)' }}</span>
                 </div>
               </td>
-              <td class="px-6 py-4 text-gray-500">{{ video.date }}</td>
-              <td class="px-6 py-4 text-gray-700 font-medium">{{ video.views }}</td>
-              <td class="px-6 py-4 text-gray-700 font-medium">{{ video.likes }}</td>
-              <td class="px-6 py-4">
-                <span
-                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-                  :class="statusClass(video.status)"
-                >
-                  {{ video.status }}
-                </span>
-              </td>
+              <td class="px-6 py-4 text-gray-500">{{ formatDate(video.create_time) }}</td>
+              <td class="px-6 py-4 text-gray-700 font-medium">{{ formatNumber(video.view_count) }}</td>
+              <td class="px-6 py-4 text-gray-700 font-medium">{{ formatNumber(video.like_count) }}</td>
             </tr>
           </tbody>
         </table>
@@ -67,10 +79,10 @@
 </template>
 
 <script setup>
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, ref, computed, onMounted } from 'vue'
 import Layout from '../components/Layout.vue'
 
-// Icon components
+// ── Icon components ──────────────────────────────────────────────────────────
 const VideoIcon = defineComponent({
   render: () => h('svg', { fill: 'none', stroke: 'currentColor', viewBox: '0 0 24 24' }, [
     h('path', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2',
@@ -101,28 +113,98 @@ const TrendIcon = defineComponent({
   ])
 })
 
-const stats = [
-  { label: '総アップロード数', value: '142', change: '↑ 先月比 +12%', changePositive: true, icon: VideoIcon, bgColor: 'bg-pink-50', iconColor: 'text-pink-500' },
-  { label: '今月のビュー数', value: '1.2M', change: '↑ 先月比 +8%', changePositive: true, icon: EyeIcon, bgColor: 'bg-blue-50', iconColor: 'text-blue-500' },
-  { label: 'いいね合計', value: '48.3K', change: '↑ 先月比 +21%', changePositive: true, icon: HeartIcon, bgColor: 'bg-red-50', iconColor: 'text-red-500' },
-  { label: 'エンゲージメント率', value: '4.2%', change: '↓ 先月比 -0.3%', changePositive: false, icon: TrendIcon, bgColor: 'bg-green-50', iconColor: 'text-green-500' }
-]
+// ── State ────────────────────────────────────────────────────────────────────
+const videos = ref([])
+const loading = ref(true)
+const error = ref('')
 
-const recentVideos = [
-  { id: 1, title: '春の桜スポット巡り 2024', date: '2024-04-20 14:32', views: '28,412', likes: '1,203', status: '公開中' },
-  { id: 2, title: '簡単パスタレシピ10選', date: '2024-04-19 09:15', views: '15,887', likes: '892', status: '公開中' },
-  { id: 3, title: 'AIツール比較レビュー', date: '2024-04-17 18:00', views: '42,301', likes: '3,102', status: '公開中' },
-  { id: 4, title: '東京カフェめぐり Vol.3', date: '2024-04-15 12:00', views: '9,244', likes: '567', status: '審査中' },
-  { id: 5, title: '朝活ルーティン公開', date: '2024-04-14 06:30', views: '33,100', likes: '2,441', status: '公開中' }
-]
+// ── Computed stats from real API data ────────────────────────────────────────
+const totalVideos = computed(() => videos.value.length)
+const totalViews = computed(() =>
+  videos.value.reduce((sum, v) => sum + (v.view_count ?? 0), 0)
+)
+const totalLikes = computed(() =>
+  videos.value.reduce((sum, v) => sum + (v.like_count ?? 0), 0)
+)
 
-function statusClass(status) {
-  const map = {
-    '公開中': 'bg-green-100 text-green-700',
-    '審査中': 'bg-yellow-100 text-yellow-700',
-    '非公開': 'bg-gray-100 text-gray-600',
-    'エラー': 'bg-red-100 text-red-700'
-  }
-  return map[status] ?? 'bg-gray-100 text-gray-600'
+const stats = computed(() => [
+  {
+    label: '取得動画数',
+    value: String(totalVideos.value),
+    icon: VideoIcon,
+    bgColor: 'bg-pink-50',
+    iconColor: 'text-pink-500',
+  },
+  {
+    label: '合計ビュー数',
+    value: formatNumber(totalViews.value),
+    icon: EyeIcon,
+    bgColor: 'bg-blue-50',
+    iconColor: 'text-blue-500',
+  },
+  {
+    label: 'いいね合計',
+    value: formatNumber(totalLikes.value),
+    icon: HeartIcon,
+    bgColor: 'bg-red-50',
+    iconColor: 'text-red-500',
+  },
+  {
+    label: '取得件数上限',
+    value: '20',
+    icon: TrendIcon,
+    bgColor: 'bg-green-50',
+    iconColor: 'text-green-500',
+  },
+])
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function formatNumber(n) {
+  if (n == null) return '-'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
 }
+
+function formatDate(unixSeconds) {
+  if (!unixSeconds) return '-'
+  return new Date(unixSeconds * 1000).toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+// ── Data fetch ───────────────────────────────────────────────────────────────
+async function fetchVideos() {
+  loading.value = true
+  error.value = ''
+
+  try {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
+    const res = await fetch(`${baseUrl}/api/videos`, { credentials: 'include' })
+
+    if (res.status === 401) {
+      error.value = 'TikTok認証が必要です。サイドバーのTikTokログインボタンから連携してください。'
+      return
+    }
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      error.value = body.detail ?? '動画一覧の取得に失敗しました'
+      return
+    }
+
+    const json = await res.json()
+    videos.value = json?.data?.videos ?? []
+  } catch {
+    error.value = 'ネットワークエラーが発生しました'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(fetchVideos)
 </script>
