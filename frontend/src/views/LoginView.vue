@@ -1,20 +1,20 @@
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-    <div class="bg-gray-800 rounded-2xl shadow-2xl p-10 w-full max-w-md border border-gray-700">
+  <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900">
+    <div class="bg-purple-900/40 backdrop-blur rounded-2xl shadow-2xl p-10 w-full max-w-md border border-purple-600">
       <!-- Logo / Title -->
       <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-16 h-16 bg-pink-600 rounded-2xl mb-4 shadow-lg">
+        <div class="inline-flex items-center justify-center w-16 h-16 bg-purple-600 rounded-2xl mb-4 shadow-lg">
           <svg class="w-9 h-9 text-white" fill="currentColor" viewBox="0 0 24 24">
             <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.17 8.17 0 004.78 1.52V6.77a4.85 4.85 0 01-1.01-.08z"/>
           </svg>
         </div>
         <h1 class="text-2xl font-bold text-white">TikTok Manager</h1>
-        <p class="text-gray-400 mt-1 text-sm">コンテンツ管理・自動投稿プラットフォーム</p>
+        <p class="text-purple-300 mt-1 text-sm">コンテンツ管理・自動投稿プラットフォーム</p>
       </div>
 
       <!-- Login Card -->
       <div class="space-y-4">
-        <p class="text-center text-gray-300 text-sm mb-6">
+        <p class="text-center text-purple-200 text-sm mb-6">
           続行するには Google または TikTok アカウントでサインインしてください
         </p>
 
@@ -41,16 +41,16 @@
         </a>
       </div>
 
-      <p class="mt-8 text-center text-xs text-gray-500">
+      <p class="mt-8 text-center text-xs text-purple-400">
         サインインすることで、
-        <a :href="privacyUrl" class="underline hover:text-gray-300">プライバシーポリシー</a>
+        <a :href="privacyUrl" class="underline hover:text-purple-200">プライバシーポリシー</a>
         と
-        <a :href="tosUrl" class="underline hover:text-gray-300">利用規約</a>
+        <a :href="tosUrl" class="underline hover:text-purple-200">利用規約</a>
         に同意したことになります。<br>
         By signing in, you agree to our
-        <a :href="privacyUrl" class="underline hover:text-gray-300">Privacy Policy</a>
+        <a :href="privacyUrl" class="underline hover:text-purple-200">Privacy Policy</a>
         and
-        <a :href="tosUrl" class="underline hover:text-gray-300">Terms of Service</a>.
+        <a :href="tosUrl" class="underline hover:text-purple-200">Terms of Service</a>.
       </p>
     </div>
   </div>
