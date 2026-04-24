@@ -1,5 +1,11 @@
 <template>
   <Layout>
+    <!-- TikTok connection banner -->
+    <div v-if="needsTiktokReconnect" class="mb-6 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-4">
+      <span>TikTokアカウントを連携してください</span>
+      <router-link to="/settings" class="shrink-0 underline hover:text-yellow-900 font-medium">設定ページへ</router-link>
+    </div>
+
     <!-- Error banner -->
     <div v-if="error" class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm flex items-center justify-between gap-4">
       <span>{{ error }}</span>
@@ -128,7 +134,7 @@ const TrendIcon = defineComponent({
 })
 
 // ── Composable ───────────────────────────────────────────────────────────────
-const { callWithRefresh, baseUrl } = useApiWithRefresh()
+const { callWithRefresh, baseUrl, needsTiktokReconnect, checkHasTiktok } = useApiWithRefresh()
 
 // ── State ────────────────────────────────────────────────────────────────────
 const videos = ref([])
@@ -255,5 +261,8 @@ async function loadMore() {
   }
 }
 
-onMounted(fetchVideos)
+onMounted(async () => {
+  await checkHasTiktok()
+  await fetchVideos()
+})
 </script>

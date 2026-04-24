@@ -1,5 +1,6 @@
 import os
 import secrets
+import time
 import httpx
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse
@@ -76,6 +77,7 @@ async def google_callback(
 
         tokens = token_res.json()
         access_token = tokens.get("access_token")
+        google_refresh_token = tokens.get("refresh_token")
 
         user_res = await client.get(
             GOOGLE_USERINFO_URL,
@@ -93,8 +95,49 @@ async def google_callback(
         "picture": user_info.get("picture"),
         "auth_provider": "google",
     }
+    request.session["google_access_token"] = access_token
+    if google_refresh_token:
+        request.session["google_refresh_token"] = google_refresh_token
 
     return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
+
+
+@router.post("/google/refresh")
+async def google_refresh_token(request: Request) -> dict:
+    """Refresh Google access token using the stored refresh token."""
+    refresh_token = request.session.get("google_refresh_token")
+    if not refresh_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Googleリフレッシュトークンがありません。再度ログインしてください。",
+        )
+
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+            },
+        )
+
+    if token_res.status_code != 200:
+        body = token_res.json() if token_res.content else {}
+        detail = body.get("error_description", "Googleトークンのリフレッシュに失敗しました")
+        raise HTTPException(status_code=502, detail=detail)
+
+    tokens = token_res.json()
+    new_access_token = tokens.get("access_token")
+    expires_in = tokens.get("expires_in", 3600)
+
+    if not new_access_token:
+        raise HTTPException(status_code=502, detail="新しいアクセストークンを取得できませんでした")
+
+    request.session["google_access_token"] = new_access_token
+
+    return {"message": "Googleトークンを更新しました", "expires_in": expires_in}
 
 
 @router.get("/tiktok")
@@ -168,6 +211,7 @@ async def tiktok_callback(
     if refresh_token:
         request.session["tiktok_refresh_token"] = refresh_token
     request.session["tiktok_token_expires_in"] = expires_in
+    request.session["tiktok_token_expires_at"] = time.time() + expires_in
 
     return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
 
@@ -208,6 +252,7 @@ async def tiktok_refresh_token(request: Request) -> dict:
     if new_refresh_token:
         request.session["tiktok_refresh_token"] = new_refresh_token
     request.session["tiktok_token_expires_in"] = expires_in
+    request.session["tiktok_token_expires_at"] = time.time() + expires_in
 
     return {"message": "トークンを更新しました", "expires_in": expires_in}
 
@@ -218,7 +263,12 @@ async def get_me(request: Request) -> dict:
     user = request.session.get("user")
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    return user
+    has_tiktok = bool(request.session.get("tiktok_access_token"))
+    return {
+        **user,
+        "has_tiktok": has_tiktok,
+        "tiktok_token_expires_at": request.session.get("tiktok_token_expires_at"),
+    }
 
 
 @router.post("/logout")

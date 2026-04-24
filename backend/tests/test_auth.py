@@ -86,3 +86,108 @@ def test_refresh_token_without_session_returns_401():
     """POST /auth/tiktok/refresh without a refresh token in session should return 401."""
     response = client.post("/auth/tiktok/refresh")
     assert response.status_code == 401
+
+
+def test_google_refresh_without_session_returns_401():
+    """POST /auth/google/refresh without a refresh token in session should return 401."""
+    response = client.post("/auth/google/refresh")
+    assert response.status_code == 401
+
+
+@patch("routers.auth.httpx.AsyncClient")
+def test_google_callback_saves_refresh_token_and_has_tiktok_false(mock_httpx):
+    """Google callback should save refresh_token; /auth/me should return has_tiktok=False."""
+    mock_token_res = MagicMock()
+    mock_token_res.status_code = 200
+    mock_token_res.json.return_value = {
+        "access_token": "google_access_123",
+        "refresh_token": "google_refresh_456",
+    }
+
+    mock_user_res = MagicMock()
+    mock_user_res.status_code = 200
+    mock_user_res.json.return_value = {
+        "sub": "user-sub-123",
+        "email": "test@example.com",
+        "name": "Test User",
+        "picture": "https://example.com/pic.jpg",
+    }
+
+    mock_ctx = AsyncMock()
+    mock_ctx.post = AsyncMock(return_value=mock_token_res)
+    mock_ctx.get = AsyncMock(return_value=mock_user_res)
+    mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+    mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    from urllib.parse import urlparse, parse_qs
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        login_res = c.get("/auth/google", follow_redirects=False)
+        location = login_res.headers["location"]
+        state = parse_qs(urlparse(location).query)["state"][0]
+
+        callback_res = c.get(
+            f"/auth/google/callback?code=fake_code&state={state}",
+            follow_redirects=False,
+        )
+        assert callback_res.status_code in (302, 307)
+
+        me_res = c.get("/auth/me")
+        assert me_res.status_code == 200
+        data = me_res.json()
+        assert data["has_tiktok"] is False
+        assert "tiktok_token_expires_at" in data
+
+
+@patch("routers.auth.httpx.AsyncClient")
+def test_tiktok_callback_saves_expires_at(mock_httpx):
+    """TikTok callback should store tiktok_token_expires_at; /auth/me returns it."""
+    mock_token_res = MagicMock()
+    mock_token_res.status_code = 200
+    mock_token_res.json.return_value = {
+        "access_token": "tiktok_access_abc",
+        "refresh_token": "tiktok_refresh_xyz",
+        "expires_in": 86400,
+    }
+
+    mock_user_res = MagicMock()
+    mock_user_res.status_code = 200
+    mock_user_res.json.return_value = {
+        "data": {
+            "user": {
+                "open_id": "tiktok-open-id-001",
+                "display_name": "TikTok User",
+                "avatar_url": "https://tiktok.com/avatar.jpg",
+            }
+        }
+    }
+
+    mock_ctx = AsyncMock()
+    mock_ctx.post = AsyncMock(return_value=mock_token_res)
+    mock_ctx.get = AsyncMock(return_value=mock_user_res)
+    mock_httpx.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
+    mock_httpx.return_value.__aexit__ = AsyncMock(return_value=None)
+
+    import time
+    from urllib.parse import urlparse, parse_qs
+
+    with TestClient(app, raise_server_exceptions=False) as c:
+        login_res = c.get("/auth/tiktok", follow_redirects=False)
+        location = login_res.headers["location"]
+        state = parse_qs(urlparse(location).query)["state"][0]
+
+        before = time.time()
+        callback_res = c.get(
+            f"/auth/tiktok/callback?code=fake_code&state={state}",
+            follow_redirects=False,
+        )
+        after = time.time()
+        assert callback_res.status_code in (302, 307)
+
+        me_res = c.get("/auth/me")
+        assert me_res.status_code == 200
+        data = me_res.json()
+        assert data["has_tiktok"] is True
+        expires_at = data["tiktok_token_expires_at"]
+        assert expires_at is not None
+        assert before + 86400 <= expires_at <= after + 86400
