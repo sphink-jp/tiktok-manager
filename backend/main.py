@@ -19,9 +19,9 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:8080")
 
-# Cloud Run: repo is cloned to /workspace-tiktok/; local dev: relative to this file
-_default_frontend = "/workspace-tiktok/frontend"
-FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", _default_frontend))
+# Cloud Run: built Vue dist is copied to ./static by Dockerfile
+_default_frontend = Path(__file__).parent / "static"
+FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", str(_default_frontend)))
 
 
 @asynccontextmanager
