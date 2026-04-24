@@ -20,7 +20,7 @@ def test_list_videos_requires_tiktok_auth():
 
 
 def test_list_videos_returns_tiktok_response():
-    """GET /api/videos should proxy the TikTok video list response."""
+    """GET /api/videos should return transformed video list with cursor and has_more."""
     from routers.deps import require_tiktok_token
 
     app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
@@ -59,9 +59,12 @@ def test_list_videos_returns_tiktok_response():
 
         assert response.status_code == 200
         data = response.json()
-        assert "data" in data
-        assert len(data["data"]["videos"]) == 1
-        assert data["data"]["videos"][0]["id"] == "vid_001"
+        assert "videos" in data
+        assert len(data["videos"]) == 1
+        assert data["videos"][0]["id"] == "vid_001"
+        assert "cursor" in data
+        assert "has_more" in data
+        assert data["has_more"] is False
     finally:
         app.dependency_overrides.clear()
 
@@ -109,5 +112,72 @@ def test_list_videos_tiktok_502_returns_502():
             response = client.get("/api/videos")
 
         assert response.status_code == 502
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_videos_passes_cursor_param():
+    """cursor query param should be forwarded in the TikTok request body."""
+    from routers.deps import require_tiktok_token
+
+    app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
+
+    mock_tiktok_response = {
+        "data": {"videos": [], "cursor": 99, "has_more": False},
+        "error": {"code": "ok", "message": "", "log_id": ""},
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"content"
+    mock_response.json.return_value = mock_tiktok_response
+
+    try:
+        with patch("routers.videos.httpx.AsyncClient") as mock_client_cls:
+            mock_client_instance = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client_instance
+            mock_client_instance.post.return_value = mock_response
+
+            response = client.get("/api/videos?cursor=abc123")
+
+        assert response.status_code == 200
+        call_kwargs = mock_client_instance.post.call_args
+        assert call_kwargs.kwargs["json"]["cursor"] == "abc123"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_videos_has_more_true():
+    """has_more flag from TikTok should be reflected in the response."""
+    from routers.deps import require_tiktok_token
+
+    app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
+
+    mock_tiktok_response = {
+        "data": {
+            "videos": [{"id": "v1", "title": "A"}],
+            "cursor": 999,
+            "has_more": True,
+        },
+        "error": {"code": "ok", "message": "", "log_id": ""},
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.content = b"content"
+    mock_response.json.return_value = mock_tiktok_response
+
+    try:
+        with patch("routers.videos.httpx.AsyncClient") as mock_client_cls:
+            mock_client_instance = AsyncMock()
+            mock_client_cls.return_value.__aenter__.return_value = mock_client_instance
+            mock_client_instance.post.return_value = mock_response
+
+            response = client.get("/api/videos")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["has_more"] is True
+        assert data["cursor"] == "999"
     finally:
         app.dependency_overrides.clear()

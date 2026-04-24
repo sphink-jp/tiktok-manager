@@ -94,8 +94,15 @@
             </select>
           </div>
 
-          <!-- Status message -->
-          <div v-if="statusMessage" class="rounded-lg px-4 py-3 text-sm" :class="statusClass">
+          <!-- Status message: reconnect required -->
+          <div v-if="needsTiktokReconnect" class="rounded-lg px-4 py-3 text-sm bg-red-50 text-red-700 border border-red-200">
+            <p class="font-medium">
+              TikTokアカウントとの連携が必要です。<router-link to="/settings" class="underline hover:text-red-900">設定ページ</router-link>でTikTokと連携してください。
+            </p>
+          </div>
+
+          <!-- Status message: normal -->
+          <div v-else-if="statusMessage" class="rounded-lg px-4 py-3 text-sm" :class="statusClass">
             <p class="font-medium">{{ statusMessage }}</p>
             <p v-if="publishId" class="mt-1 text-xs opacity-75">
               Publish ID: {{ publishId }}
@@ -145,6 +152,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
 import Layout from '../components/Layout.vue'
+import { useApiWithRefresh } from '../composables/useApiWithRefresh.js'
 
 const fileInput = ref(null)
 const selectedFile = ref(null)
@@ -154,6 +162,8 @@ const uploadStepMessage = ref('')
 const statusMessage = ref('')
 const statusType = ref('') // 'success' | 'error'
 const publishId = ref('')
+
+const { callWithRefresh, needsTiktokReconnect, baseUrl } = useApiWithRefresh()
 
 const form = reactive({
   title: '',
@@ -199,6 +209,7 @@ function resetForm() {
   statusType.value = ''
   uploadStepMessage.value = ''
   publishId.value = ''
+  needsTiktokReconnect.value = false
 }
 
 async function handleUpload() {
@@ -207,6 +218,7 @@ async function handleUpload() {
   uploading.value = true
   statusMessage.value = ''
   publishId.value = ''
+  needsTiktokReconnect.value = false
   uploadStepMessage.value = 'TikTokへ動画を送信しています...'
 
   const formData = new FormData()
@@ -216,12 +228,15 @@ async function handleUpload() {
   formData.append('privacy', form.privacy)
 
   try {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${baseUrl}/api/upload`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include',
-    })
+    const res = await callWithRefresh(() =>
+      fetch(`${baseUrl}/api/upload`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      })
+    )
+
+    if (needsTiktokReconnect.value) return
 
     if (res.ok) {
       const data = await res.json()

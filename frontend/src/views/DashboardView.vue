@@ -75,6 +75,18 @@
           </tbody>
         </table>
       </div>
+
+      <!-- Load more -->
+      <div v-if="hasMore && !loading" class="px-6 py-4 border-t border-gray-100 text-center">
+        <button
+          @click="loadMore"
+          :disabled="loadingMore"
+          class="text-sm text-pink-600 hover:text-pink-700 font-medium disabled:text-gray-400 disabled:cursor-not-allowed"
+        >
+          <span v-if="loadingMore">読み込み中...</span>
+          <span v-else>もっと見る</span>
+        </button>
+      </div>
     </div>
   </Layout>
 </template>
@@ -82,6 +94,7 @@
 <script setup>
 import { defineComponent, h, ref, computed, onMounted } from 'vue'
 import Layout from '../components/Layout.vue'
+import { useApiWithRefresh } from '../composables/useApiWithRefresh.js'
 
 // ── Icon components ──────────────────────────────────────────────────────────
 const VideoIcon = defineComponent({
@@ -114,10 +127,16 @@ const TrendIcon = defineComponent({
   ])
 })
 
+// ── Composable ───────────────────────────────────────────────────────────────
+const { callWithRefresh, baseUrl } = useApiWithRefresh()
+
 // ── State ────────────────────────────────────────────────────────────────────
 const videos = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
 const error = ref('')
+const cursor = ref('')
+const hasMore = ref(false)
 
 // ── Computed stats from real API data ────────────────────────────────────────
 const totalVideos = computed(() => videos.value.length)
@@ -182,10 +201,13 @@ function formatDate(unixSeconds) {
 async function fetchVideos() {
   loading.value = true
   error.value = ''
+  cursor.value = ''
+  hasMore.value = false
 
   try {
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-    const res = await fetch(`${baseUrl}/api/videos`, { credentials: 'include' })
+    const res = await callWithRefresh(
+      () => fetch(`${baseUrl}/api/videos`, { credentials: 'include' })
+    )
 
     if (res.status === 401) {
       error.value = 'TikTok認証が必要です。設定ページからTikTokアカウントと連携してください。'
@@ -200,11 +222,36 @@ async function fetchVideos() {
     }
 
     const json = await res.json()
-    videos.value = json?.data?.videos ?? []
+    videos.value = json.videos ?? []
+    cursor.value = json.cursor ?? ''
+    hasMore.value = json.has_more ?? false
   } catch {
     error.value = 'ネットワークエラーが発生しました'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+
+  try {
+    const params = new URLSearchParams({ max_count: '20', cursor: cursor.value })
+    const res = await callWithRefresh(
+      () => fetch(`${baseUrl}/api/videos?${params}`, { credentials: 'include' })
+    )
+
+    if (!res.ok) return
+
+    const json = await res.json()
+    videos.value = [...videos.value, ...(json.videos ?? [])]
+    cursor.value = json.cursor ?? ''
+    hasMore.value = json.has_more ?? false
+  } catch {
+    // silently fail for load more
+  } finally {
+    loadingMore.value = false
   }
 }
 
