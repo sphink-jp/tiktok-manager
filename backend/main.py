@@ -31,10 +31,9 @@ app = FastAPI(title="TikTok Manager API", version="1.0.0")
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
-    session_cookie="tiktok_session",
-    same_site="lax",
-    https_only=HTTPS_ONLY,
-    max_age=60 * 60 * 24 * 7,  # 7 days
+    same_site="none",
+    https_only=True,
+    max_age=3600,
 )
 
 app.add_middleware(
