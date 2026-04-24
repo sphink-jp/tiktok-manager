@@ -20,7 +20,7 @@ steps:
       - 'push'
       - 'gcr.io/$PROJECT_ID/tiktok-manager:latest'
 
-  # Step 3: Deploy to Cloud Run with 100% traffic to latest revision
+  # Step 3: Deploy to Cloud Run (traffic defaults to 100% on latest revision)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -34,7 +34,6 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--traffic=100'
 
 images:
   - 'gcr.io/$PROJECT_ID/tiktok-manager:$COMMIT_SHA'
