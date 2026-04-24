@@ -88,7 +88,7 @@ async def tiktok_login() -> RedirectResponse:
         "client_key": TIKTOK_CLIENT_KEY,
         "redirect_uri": TIKTOK_REDIRECT_URI,
         "response_type": "code",
-        "scope": "user.info.basic,video.publish",
+        "scope": "user.info.basic",
     }
     return RedirectResponse(f"{TIKTOK_AUTH_URL}?{urlencode(params)}")
 
