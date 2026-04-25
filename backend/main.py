@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -60,6 +61,16 @@ app.include_router(videos_router)
 @app.get("/health", tags=["health"])
 async def health() -> dict:
     return {"status": "ok"}
+
+
+# ── SPA fallback: return index.html for any unmatched route ────────────────
+@app.exception_handler(404)
+async def spa_404_handler(request, exc):
+    index_file = FRONTEND_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(str(index_file))
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
 # ── Frontend static files (SPA) ─────────────────────────────────────────────
