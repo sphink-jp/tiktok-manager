@@ -38,7 +38,7 @@ app.add_middleware(
     secret_key=SECRET_KEY,
     session_cookie="tiktok_session",
     same_site="lax",
-    https_only=False,   # Cloud Run terminates TLS upstream
+    https_only=True,    # Cloud Run terminates TLS at load balancer; browser sees HTTPS so Secure flag is required
     max_age=60 * 60 * 24 * 7,
 )
 
