@@ -92,17 +92,15 @@ def test_upload_title_too_long_returns_422():
         app.dependency_overrides.clear()
 
 
-def test_upload_description_included_in_init_payload():
-    """Description must be passed to TikTok init as video_description."""
+def test_upload_description_echoed_in_response():
+    """Inbox APIではTikTokに description を送らないが、レスポンスにはエコーバックされる
+    (フロント・GCSアーカイブ用のメタデータとして利用)。"""
     from routers.deps import require_tiktok_token
     from routers import upload as upload_module
 
     app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
 
-    captured_payload = {}
-
-    async def mock_init(client, token, title, description, privacy_level, file_size, content_type):
-        captured_payload["description"] = description
+    async def mock_init(client, token, file_size, content_type):
         return ("pub_123", "https://upload.example.com/video")
 
     async def mock_upload(client, upload_url, content, content_type):
@@ -121,19 +119,21 @@ def test_upload_description_included_in_init_payload():
             response = client.post("/api/upload", data=data, files=files)
 
         assert response.status_code == 200
-        assert captured_payload.get("description") == "Hello #tiktok"
+        # Inbox APIは description を TikTok に送らない（ユーザーがアプリで設定）
+        # レスポンスにメタデータとして含まれることだけ確認
+        assert response.json()["title"] == "My Video"
     finally:
         app.dependency_overrides.clear()
 
 
 def test_upload_success_returns_publish_id():
-    """Successful upload should return publish_id and status PUBLISH_COMPLETE."""
+    """Inbox APIの成功時は publish_id と status=SEND_TO_USER_INBOX を返す。"""
     from routers.deps import require_tiktok_token
     from routers import upload as upload_module
 
     app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
 
-    async def mock_init(client, token, title, description, privacy_level, file_size, content_type):
+    async def mock_init(client, token, file_size, content_type):
         return ("pub_xyz789", "https://upload.example.com/video")
 
     async def mock_upload(client, upload_url, content, content_type):
@@ -154,6 +154,6 @@ def test_upload_success_returns_publish_id():
         assert response.status_code == 200
         body = response.json()
         assert body["publish_id"] == "pub_xyz789"
-        assert body["status"] == "PUBLISH_COMPLETE"
+        assert body["status"] == "SEND_TO_USER_INBOX"
     finally:
         app.dependency_overrides.clear()

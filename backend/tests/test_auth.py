@@ -13,14 +13,18 @@ client = TestClient(app, raise_server_exceptions=False)
 
 
 def test_tiktok_login_redirects_with_correct_scope():
-    """TikTok login must request only user.info.basic scope (video.publish requires Direct Post approval)."""
+    """TikTok login must request user.info.basic + video.upload scopes.
+
+    video.upload は Inbox API（TikTokアプリの下書きへのアップロード）に必要。
+    video.publish は Direct Post API用で App Review承認が必要なため未使用。
+    """
     response = client.get("/auth/tiktok", follow_redirects=False)
     assert response.status_code in (302, 307)
     location = response.headers["location"]
     assert "user.info.basic" in location
-    # video.publish requires Direct Post approval — must NOT be requested until approved
+    assert "video.upload" in location
+    # video.publish は App Review承認が必要なので承認取れるまで使わない
     assert "video.publish" not in location
-    assert "video.upload" not in location
 
 
 def test_tiktok_login_sets_state_in_redirect():

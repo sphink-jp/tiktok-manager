@@ -143,11 +143,13 @@ async def google_refresh(request: Request) -> dict:
 async def tiktok_login(request: Request) -> RedirectResponse:
     state = secrets.token_urlsafe(32)
     request.session["tiktok_oauth_state"] = state
+    # video.upload: Inbox API（TikTokアプリの下書きにアップロード）
+    # video.publish はDirect Post APIに必要だがTikTok App Reviewが必要なので未使用
     params = {
         "client_key": TIKTOK_CLIENT_KEY,
         "redirect_uri": TIKTOK_REDIRECT_URI,
         "response_type": "code",
-        "scope": "user.info.basic",
+        "scope": "user.info.basic,video.upload",
         "state": state,
     }
     return RedirectResponse(f"{TIKTOK_AUTH_URL}?{urlencode(params)}")
