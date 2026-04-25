@@ -1,6 +1,7 @@
 steps:
   # Step 1: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
+    id: build
     args:
       - 'build'
       - '-t'
@@ -11,17 +12,20 @@ steps:
 
   # Step 2: Push Docker image
   - name: 'gcr.io/cloud-builders/docker'
+    id: push-sha
     args:
       - 'push'
       - 'gcr.io/$PROJECT_ID/tiktok-manager:$COMMIT_SHA'
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: push-latest
     args:
       - 'push'
       - 'gcr.io/$PROJECT_ID/tiktok-manager:latest'
 
   # Step 3: Deploy to Cloud Run (traffic defaults to 100% on latest revision)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: deploy
     entrypoint: gcloud
     args:
       - 'run'
@@ -33,6 +37,23 @@ steps:
       - 'asia-northeast1'
       - '--platform'
       - 'managed'
+
+  # Step 4: Notify Discord on success
+  - name: 'gcr.io/cloud-builders/curl'
+    id: notify-discord
+    entrypoint: 'sh'
+    secretEnv: ['DISCORD_WEBHOOK_URL']
+    args:
+      - '-c'
+      - |
+        curl -s -X POST "$$DISCORD_WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -d "{\"content\": \"✅ tiktok-manager デプロイ完了\\nBuild ID: $BUILD_ID\\nCommit: $COMMIT_SHA\"}"
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/discord-webhook-url/versions/latest
+      env: 'DISCORD_WEBHOOK_URL'
 
 images:
   - 'gcr.io/$PROJECT_ID/tiktok-manager:$COMMIT_SHA'
