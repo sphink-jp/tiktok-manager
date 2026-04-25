@@ -100,13 +100,13 @@ def test_upload_description_echoed_in_response():
 
     app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
 
-    async def mock_init(client, token, file_size, content_type):
+    async def mock_init(client, token, file_size, content_type, open_id):
         return ("pub_123", "https://upload.example.com/video")
 
-    async def mock_upload(client, upload_url, content, content_type):
+    async def mock_upload(client, upload_url, content, content_type, publish_id, open_id):
         pass
 
-    async def mock_poll(client, token, publish_id):
+    async def mock_poll(client, token, publish_id, open_id):
         return publish_id
 
     try:
@@ -133,13 +133,13 @@ def test_upload_success_returns_publish_id():
 
     app.dependency_overrides[require_tiktok_token] = lambda: "fake_token"
 
-    async def mock_init(client, token, file_size, content_type):
+    async def mock_init(client, token, file_size, content_type, open_id):
         return ("pub_xyz789", "https://upload.example.com/video")
 
-    async def mock_upload(client, upload_url, content, content_type):
+    async def mock_upload(client, upload_url, content, content_type, publish_id, open_id):
         pass
 
-    async def mock_poll(client, token, publish_id):
+    async def mock_poll(client, token, publish_id, open_id):
         return publish_id
 
     try:

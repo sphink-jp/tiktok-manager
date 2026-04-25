@@ -42,6 +42,7 @@ async def _init_upload(
     token: str,
     file_size: int,
     content_type: str,
+    open_id: str,
 ) -> tuple[str, str]:
     """Step 1: Call TikTok Inbox init endpoint, return (publish_id, upload_url).
 
@@ -56,6 +57,10 @@ async def _init_upload(
             "total_chunk_count": 1,
         },
     }
+    logger.info(
+        "tiktok_init_request open_id=%s file_size=%d content_type=%s",
+        open_id, file_size, content_type,
+    )
     response = await client.post(
         TIKTOK_INIT_URL,
         json=payload,
@@ -64,6 +69,11 @@ async def _init_upload(
             "Content-Type": "application/json",
         },
         timeout=30.0,
+    )
+    body_text = response.text[:1000] if response.content else ""
+    logger.info(
+        "tiktok_init_response open_id=%s http_status=%d body=%s",
+        open_id, response.status_code, body_text,
     )
     if response.status_code != 200:
         body = response.json() if response.content else {}
@@ -76,6 +86,11 @@ async def _init_upload(
     if not publish_id or not upload_url:
         raise HTTPException(status_code=502, detail="TikTokからupload_urlを取得できませんでした")
 
+    # upload_url にはアップ用の認証付きURLパラメータが付くので末尾だけログ
+    logger.info(
+        "tiktok_init_success open_id=%s publish_id=%s upload_url_host=%s",
+        open_id, publish_id, upload_url.split("?")[0][:80],
+    )
     return publish_id, upload_url
 
 
@@ -84,9 +99,15 @@ async def _upload_video(
     upload_url: str,
     content: bytes,
     content_type: str,
+    publish_id: str,
+    open_id: str,
 ) -> None:
     """Step 2: PUT raw video bytes to TikTok's upload URL."""
     file_size = len(content)
+    logger.info(
+        "tiktok_put_request open_id=%s publish_id=%s file_size=%d",
+        open_id, publish_id, file_size,
+    )
     response = await client.put(
         upload_url,
         content=content,
@@ -97,6 +118,10 @@ async def _upload_video(
         },
         timeout=300.0,
     )
+    logger.info(
+        "tiktok_put_response open_id=%s publish_id=%s http_status=%d resp_body=%s",
+        open_id, publish_id, response.status_code, response.text[:500] if response.content else "",
+    )
     if response.status_code not in (200, 201, 204):
         raise HTTPException(status_code=502, detail="TikTokへの動画アップロードに失敗しました")
 
@@ -105,12 +130,15 @@ async def _poll_status(
     client: httpx.AsyncClient,
     token: str,
     publish_id: str,
+    open_id: str,
 ) -> str:
     """Step 3: Poll until SEND_TO_USER_INBOX (Inbox APIの最終状態) or failure.
 
     Inbox APIでは「公開完了」ではなく「ユーザーのInboxに届いた」が成功状態。
     """
-    for _ in range(POLL_ATTEMPTS):
+    last_status = ""
+    last_body = ""
+    for attempt in range(1, POLL_ATTEMPTS + 1):
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         response = await client.post(
@@ -122,22 +150,46 @@ async def _poll_status(
             },
             timeout=15.0,
         )
+        last_body = response.text[:500] if response.content else ""
         if response.status_code != 200:
+            logger.warning(
+                "tiktok_poll_http_error attempt=%d/%d open_id=%s publish_id=%s http_status=%d body=%s",
+                attempt, POLL_ATTEMPTS, open_id, publish_id, response.status_code, last_body,
+            )
             continue
 
         data = response.json().get("data", {})
-        status = data.get("status", "")
+        last_status = data.get("status", "")
+        logger.info(
+            "tiktok_poll attempt=%d/%d open_id=%s publish_id=%s status=%s body=%s",
+            attempt, POLL_ATTEMPTS, open_id, publish_id, last_status, last_body,
+        )
 
         # Inbox API の成功状態
-        if status in ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE"):
+        if last_status in ("SEND_TO_USER_INBOX", "PUBLISH_COMPLETE"):
+            logger.info(
+                "tiktok_publish_done open_id=%s publish_id=%s final_status=%s",
+                open_id, publish_id, last_status,
+            )
             return publish_id
-        if status == "FAILED":
+        if last_status == "FAILED":
             fail_reason = data.get("fail_reason", "不明なエラー")
+            logger.error(
+                "tiktok_publish_failed open_id=%s publish_id=%s fail_reason=%s",
+                open_id, publish_id, fail_reason,
+            )
             raise HTTPException(status_code=502, detail=f"TikTokアップロード失敗: {fail_reason}")
 
+    logger.warning(
+        "tiktok_poll_timeout open_id=%s publish_id=%s last_status=%s last_body=%s",
+        open_id, publish_id, last_status, last_body,
+    )
     raise HTTPException(
         status_code=504,
-        detail="TikTokの処理がタイムアウトしました。後ほどTikTokアプリの下書き(Inbox)で確認してください",
+        detail=f"TikTokの処理がタイムアウトしました(last_status={last_status or 'unknown'})。"
+               f"後ほどTikTokアプリの下書き(Inbox)で確認してください。"
+               f"Sandbox状態だとAPI成功でもInboxに届かない既知の制限があります "
+               f"(App Audit通過必要)",
     )
 
 
@@ -174,12 +226,20 @@ async def upload_video(
 
     mime_type = file.content_type or "video/mp4"
 
+    # 診断ログ用に open_id を取り出す（無くても続行）
+    open_id = (request.session.get("user") or {}).get("open_id") or "unknown"
+
+    logger.info(
+        "upload_start open_id=%s filename=%s file_size=%d mime=%s title_len=%d desc_len=%d privacy=%s",
+        open_id, file.filename, len(content), mime_type, len(title), len(description), privacy,
+    )
+
     async with httpx.AsyncClient() as client:
         publish_id, upload_url = await _init_upload(
-            client, token, len(content), mime_type
+            client, token, len(content), mime_type, open_id,
         )
-        await _upload_video(client, upload_url, content, mime_type)
-        await _poll_status(client, token, publish_id)
+        await _upload_video(client, upload_url, content, mime_type, publish_id, open_id)
+        await _poll_status(client, token, publish_id, open_id)
 
     # Archive video to GCS after successful TikTok inbox upload (best-effort, non-blocking)
     gcs_uri: str | None = None
