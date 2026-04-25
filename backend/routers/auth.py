@@ -102,7 +102,7 @@ async def google_callback(
     if expires_at:
         request.session["google_token_expires_at"] = expires_at
 
-    return RedirectResponse(FRONTEND_ORIGIN)
+    return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
 
 
 @router.post("/google/refresh")
@@ -233,7 +233,7 @@ async def tiktok_callback(
     if expires_at is not None:
         request.session["tiktok_token_expires_at"] = expires_at
 
-    return RedirectResponse(FRONTEND_ORIGIN)
+    return RedirectResponse(f"{FRONTEND_ORIGIN}/dashboard")
 
 
 @router.post("/tiktok/refresh")
